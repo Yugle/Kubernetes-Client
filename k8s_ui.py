@@ -1,8 +1,8 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QFileDialog
 from k8s import UpdateSevice
-from config import *
 import sys
+import os
 import re
 import yaml
 import resource
@@ -10,14 +10,14 @@ import resource
 class Ui_k8s(object):
     def setupUi(self, k8s):
         k8s.setObjectName("k8s")
-        k8s.resize(700, 270)
+        k8s.resize(700, 280)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(k8s.sizePolicy().hasHeightForWidth())
         k8s.setSizePolicy(sizePolicy)
-        k8s.setMinimumSize(QtCore.QSize(700, 270))
-        k8s.setMaximumSize(QtCore.QSize(700, 270))
+        k8s.setMinimumSize(QtCore.QSize(700, 280))
+        k8s.setMaximumSize(QtCore.QSize(700, 280))
         self.widget = QtWidgets.QWidget(k8s)
         self.widget.setObjectName("widget")
         self.layoutWidget = QtWidgets.QWidget(self.widget)
@@ -109,15 +109,8 @@ class Ui_k8s(object):
         self.filenames_path = []
         self.getAllDeployment.clicked.connect(self.getAllDeploymentFromFristEnvironment)
         
-    def setSelectList(self, service_list):
-        i = 0
-        for deployment in service_list:
-            self.service.addItem("")
-            self.service.setItemText(i, str(deployment))
-            i += 1
-
     def chooseFile(self):
-        self.filenames_path = QFileDialog.getOpenFileNames(None, "选取配置文件", "Yaml Files(*.yaml)")[0]
+        self.filenames_path = QFileDialog.getOpenFileNames(None, "选取配置文件",'', "Yaml Files(*.yaml)")[0]
         count_file = len(self.filenames_path)
         self.openFile.setText("%d个文件已选择"%count_file)
 
@@ -127,7 +120,9 @@ class Ui_k8s(object):
         environment_list = []
         for env in all_environment_list:
             if(qt_list[env].isChecked()):
+                # config_file_path = "config/kubeconfig_" + env + ".yaml"
                 config_file_path = "config/kubeconfig_" + env + ".yaml"
+                config_file_path = self.getResourcePath(config_file_path)
                 environment_list.append(config_file_path)
 
         if(self.filenames_path != []):
@@ -150,16 +145,21 @@ class Ui_k8s(object):
         if(environment_list == []):
             self.appendText("请至少选择一个环境！")
         else:
+            service_list = []
             for env in environment_list:
                 try:
                     client = UpdateSevice(env)
                     response = client.getDeploymentList()
-                    self.appendText("<b>%s</b>:<br/>"%self.getEnvironmentNameAndNamespace(env))
-                    self.setSelectList(response)
-                    for service in response:
-                        self.appendText(service)
+                    # print(response)
+                    service_list.extend(response)
+                    service_list = sorted(list(set(service_list)))
+                    self.appendText("<font color=green>%s全部部署加载完成!</font>"%self.getEnvironmentNameAndNamespace(env))
+                    # for service in response:
+                    #     self.appendText(service)
                 except Exception as e:
-                    self.appendText("<p style='color:#FF0000'>%s</p>"%str(e))
+                    self.appendText("<font color=red>%s</font>"%str(e))
+
+            self.setSelectList(service_list)
 
     def getVersion(self):
         environment_list = self.getEnvironmentList()
@@ -172,7 +172,7 @@ class Ui_k8s(object):
                     response = client.getCurrentVersion(self.service.currentText())
                     self.appendText("<b>%s</b>:<br/>"%self.getEnvironmentNameAndNamespace(env) + response)
                 except Exception as e:
-                    self.appendText("<p style='color:#FF0000'>%s</p>"%str(e))
+                    self.appendText("<font color=red>%s</font>"%str(e))
 
     def updateSevice(self):
         environment_list = self.getEnvironmentList()
@@ -186,13 +186,32 @@ class Ui_k8s(object):
                         response = client.updateServie(self.service.currentText(), self.toVersion.text())
                         self.appendText("<b>%s</b>:<br/>"%self.getEnvironmentNameAndNamespace(env) + response)
                     except Exception as e:
-                        self.appendText("<p style='color:#FF0000'>%s</p>"%str(e))
+                        self.appendText("<font color=red>%s</font>"%str(e))
+
             else:
-                self.appendText("<p style='color:#FF0000'>要更新的版本号格式错误</p>")
+                self.appendText("<font color=#F58220>要更新的版本号格式错误,未执行更新!</font>")
+
+    def setSelectList(self, service_list):
+        i = 0
+        self.service.clear()
+        for deployment in service_list:
+            self.service.addItem("")
+            self.service.setItemText(i, str(deployment))
+            i += 1
 
     def appendText(self, text):
         self.view.append(text)
         self.view.moveCursor(self.view.textCursor().End)
+
+    def getResourcePath(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+        
+        return os.path.join(base_path, relative_path)
 
 if __name__ == '__main__':
     k8s_client = QtWidgets.QApplication(sys.argv)
